@@ -12,7 +12,7 @@ from huggingface_hub import InferenceClient
 from huggingface_hub.errors import HfHubHTTPError
 
 # ---------------- UI SETUP ----------------
-st.set_page_config(page_title="Hugging Face Analyzer", page_icon="🤔", layout="centered"))
+st.set_page_config(page_title="Hugging Face Analyzer", page_icon="🤔", layout="centered")
 st.title("🤔 Kath's AI Personality Analyzer (Free)")
 st.caption("Powered by Hugging Face Hosted Inference API — Model: **tiiuae/falcon-7b-instruct** (free)")
 
