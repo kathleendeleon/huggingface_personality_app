@@ -4,20 +4,23 @@ os.environ["STREAMLIT_SERVER_RUN_ON_SAVE"] = "false"
 
 import json
 import re
+from typing import Any, Dict, Optional
+
 import streamlit as st
 import pandas as pd
-from typing import Any, Dict, Optional
 from huggingface_hub import InferenceClient
 from huggingface_hub.errors import HfHubHTTPError
 
 # ---------------- UI SETUP ----------------
-st.set_page_config(page_title="Hugging Face Analyzer", page_icon="🤔")
+st.set_page_config(page_title="Hugging Face Analyzer", page_icon="🤔", layout="centered"))
 st.title("🤔 Kath's AI Personality Analyzer (Free)")
-st.caption("Powered by Hugging Face Hosted Inference API — Model: **google/gemma-7b-it** (free)")
+st.caption("Powered by Hugging Face Hosted Inference API — Model: **tiiuae/falcon-7b-instruct** (free)")
+
+
 
 # ---------------- API / MODEL ----------------
 HF_TOKEN = st.secrets.get("HF_TOKEN", os.getenv("HF_TOKEN", ""))
-MODEL_ID = st.secrets.get("HF_MODEL_ID", os.getenv("HF_MODEL_ID", "google/gemma-7b-it"))
+MODEL_ID = st.secrets.get("HF_MODEL_ID", os.getenv("HF_MODEL_ID", "tiiuae/falcon-7b-instruct"))
 
 if not HF_TOKEN:
     st.error("🔐 Missing `HF_TOKEN`. Add it in Streamlit → Settings → Secrets.")
@@ -30,7 +33,7 @@ with st.sidebar:
     st.header("⚙️ Settings")
     temperature = st.slider("Creativity (temperature)", 0.0, 1.0, 0.5, 0.1)
     max_new_tokens = st.slider("Max output tokens", 256, 1024, 600, 32)
-    st.caption("If output truncates, raise tokens. Lower temperature = more precise; higher = more creative.")
+    st.caption("If output truncates, raise tokens. Lower temp = more precise; higher = more creative.")
 
 # ---------------- PROMPT ----------------
 SYSTEM_PROMPT = """
@@ -67,6 +70,8 @@ def build_prompt(user_text: str) -> str:
 # ---------------- HELPERS ----------------
 def _extract_json_block(text: str) -> Optional[str]:
     """Try to pull a JSON object from the model text."""
+    if not isinstance(text, str):
+        return None
     m = re.search(r"\{.*\}\s*$", text, flags=re.DOTALL)
     if m:
         return m.group(0)
@@ -101,23 +106,19 @@ def show_big_five(big_five: Dict[str, Any]):
         ("agreeableness", "Agreeableness"),
         ("neuroticism", "Neuroticism"),
     ]
-    rows = []
+    st.subheader("🧭 Big Five Traits")
     for key, label in trait_map:
         item = big_five.get(key, {}) if isinstance(big_five, dict) else {}
         score = safe_int(item.get("score", 0))
         reason = str(item.get("reason", "") or "")
-        rows.append({"Trait": label, "Score": score, "Reason": reason})
-
-    # Pretty render: bars + reasons
-    st.subheader("🧭 Big Five Traits")
-    for r in rows:
         c1, c2 = st.columns([1, 4])
         with c1:
-            st.markdown(f"**{r['Trait']}**")
-            st.markdown(f"**{r['Score']}/100**")
+            st.markdown(f"**{label}**")
+            st.markdown(f"**{score}/100**")
         with c2:
-            st.progress(r["Score"])
-            st.caption(r["Reason"])
+            st.progress(score)
+            if reason:
+                st.caption(reason)
 
 def render_results(j: Dict[str, Any]):
     # Emotional tone
@@ -169,11 +170,36 @@ def render_results(j: Dict[str, Any]):
         mime="application/json",
     )
 
+def analyze_text(prompt: str) -> str:
+    """Call HF Hosted Inference API (non-streaming for compatibility)."""
+    try:
+        return client.text_generation(
+            prompt,
+            max_new_tokens=int(max_new_tokens),
+            temperature=float(temperature),
+            # Optional knobs:
+            # top_p=0.95,
+            # repetition_penalty=1.1,
+        )
+    except HfHubHTTPError as e:
+        msg = str(e)
+        if "404" in msg or "Repository Not Found" in msg:
+            return ("**Error:** Model not available on Hosted Inference API. "
+                    "Try later or switch to another free model (e.g., `google/gemma-7b-it`).")
+        if "429" in msg:
+            return "**Error:** Rate limited. The free API is busy — please try again shortly."
+        if "401" in msg or "Forbidden" in msg:
+            return "**Error:** Unauthorized. Check your HF_TOKEN’s permissions."
+        if "503" in msg or "504" in msg:
+            return "**Error:** Backend unavailable or cold-starting. Try again in a moment."
+        return f"**HF Error:** {msg}"
+    except Exception as e:
+        return f"**Unexpected error:** {e}"
+
 # ---------------- MAIN UI ----------------
 st.markdown("Paste your writing sample below. The analyzer will estimate tone, Big Five traits, a likely MBTI, and give tailored suggestions.")
 
 user_text = st.text_area("✍️ Your text:", height=250, placeholder="A few paragraphs works best…")
-
 analyze = st.button("🔍 Analyze", type="primary")
 
 if analyze:
@@ -183,35 +209,13 @@ if analyze:
 
     with st.spinner("Thinking…"):
         prompt = build_prompt(user_text)
-        try:
-            raw = client.text_generation(
-                prompt,
-                max_new_tokens=int(max_new_tokens),
-                temperature=float(temperature),
-                # You can optionally add: top_p=0.95, repetition_penalty=1.1
-            )
-        except HfHubHTTPError as e:
-            msg = str(e)
-            if "Repository Not Found" in msg or "404" in msg:
-                st.error("Model not available on the Hosted Inference API. Try later or switch model.")
-            elif "429" in msg:
-                st.error("Rate limited. The free API is busy — try again shortly.")
-            elif "401" in msg or "Forbidden" in msg:
-                st.error("Unauthorized. Check your HF_TOKEN permissions.")
-            elif "503" in msg or "504" in msg:
-                st.error("Backend unavailable or cold-starting. Try again in a moment.")
-            else:
-                st.error(f"Hugging Face error: {msg}")
-            st.stop()
-        except Exception as e:
-            st.error(f"Unexpected error: {e}")
-            st.stop()
+        raw = analyze_text(prompt)
 
-    # Try JSON parse
-    parsed = parse_response_to_json(raw)
     st.subheader("📋 Results")
+    parsed = parse_response_to_json(raw)
     if parsed:
         render_results(parsed)
     else:
         st.caption("Couldn’t parse clean JSON — showing raw model output instead.")
         st.markdown(raw)
+
