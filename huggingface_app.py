@@ -3,8 +3,8 @@ import streamlit as st
 from huggingface_hub import InferenceClient
 from huggingface_hub.errors import HfHubHTTPError
 
-st.set_page_config(page_title="Personality Analyzer", page_icon="🧠")
-st.title("🧠 Kath's AI Personality Analyzer")
+st.set_page_config(page_title="Hugging Face Analyzer", page_icon="🤔")
+st.title("🤔 Kath's AI Personality Analyzer")
 st.subheader("Hugging Face Model gpt-oss-20b")
 
 st.write(
