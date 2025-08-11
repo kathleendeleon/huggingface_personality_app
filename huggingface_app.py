@@ -13,23 +13,24 @@ st.write(
 )
 
 # ----------------- CONFIG / SECRETS -----------------
-HF_TOKEN = st.secrets.get("HF_TOKEN", os.getenv("HF_TOKEN", ""))
-HF_ENDPOINT_URL = st.secrets.get("HF_ENDPOINT_URL", os.getenv("HF_ENDPOINT_URL", ""))  # e.g., https://xxx.endpoints.huggingface.cloud
-HF_MODEL_ID = st.secrets.get("HF_MODEL_ID", os.getenv("HF_MODEL_ID", "openai/gpt-oss-20b"))
 
-if not HF_TOKEN:
-    st.error("🔐 Missing HF_TOKEN. Add it in Streamlit → Settings → Secrets.")
-    st.stop()
+HF_TOKEN = os.getenv("HF_TOKEN")
+HF_ENDPOINT_URL = os.getenv("HF_ENDPOINT_URL")  # e.g. https://abc123.us-east-1.aws.endpoints.huggingface.cloud
+HF_MODEL_ID = os.getenv("HF_MODEL_ID", "openai/gpt-oss-20b")
 
-# Prefer a dedicated Inference Endpoint if provided
 if HF_ENDPOINT_URL:
-    client = InferenceClient(api_url=HF_ENDPOINT_URL, token=HF_TOKEN)
-    st.caption("Using Hugging Face Inference Endpoint.")
+    # ✅ Correct for Inference Endpoint
+    client = InferenceClient(model=HF_ENDPOINT_URL, token=HF_TOKEN)
+    # or: InferenceClient(base_url=HF_ENDPOINT_URL, api_key=HF_TOKEN)
 else:
+    # Hosted (serverless) Inference API — may not be enabled for this model
     client = InferenceClient(model=HF_MODEL_ID, token=HF_TOKEN)
     st.caption(f"Using Hosted Inference API for `{HF_MODEL_ID}` (may not be enabled for this model).")
 
+# ----------------- STREAMLIT BODY UI -----------------
+
 st.divider()
+
 st.markdown("Paste your writing sample below and get a quick personality readout.")
 user_text = st.text_area("✍️ Your text:", height=240)
 
